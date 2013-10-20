@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<GeoTwitterConfigs>
+	<general>
+	</general>
+	<twitter>
+		<appkeys>
+			<app_key></app_key>
+			<app_secret></app_secret>
+			<oauth_token></oauth_token>
+			<oauth_token_secret></oauth_token_secret>
+		</appkeys>
+	</twitter>
+	<database>
+		<database_name></database_name>
+		<user_name></user_name>
+	</database>
+</GeoTwitterConfigs>
