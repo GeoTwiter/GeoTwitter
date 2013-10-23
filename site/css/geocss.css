@@ -1,0 +1,116 @@
+@charset "utf-8";
+/* CSS Document */
+body { width:1000px;
+	margin-left:auto;
+		margin-right:auto;}
+#head { width:1000px;
+		height:140px;
+		background-color:#1289b1;
+		border-bottom-left-radius:4em;
+		border-bottom-right-radius:4em;
+		border:hidden;
+}
+.twit { float:left;
+ 		margin-left:20px;
+		margin-top:20px;
+		}
+.headimg {
+		
+		margin-right:auto;}
+#bodydiv {
+		width:1000px;
+		height:auto;
+		margin-right:auto;
+		margin-left:auto;
+		margin-top:5px;
+		border:hidden;
+		border-radius:50px;
+	
+	}
+#leftdiv {
+	    float:left;
+		width:400px;
+		height:1200px;
+		
+	}
+#searchbox {	
+		margin-left:20px;
+		margin-right:auto;
+		margin-top:30px;
+		width:350px;
+		height:150px;
+		border:hidden;
+		border-radius:2em;
+		background-color:#1289b1;
+		
+	
+	}
+#searchbar{ margin-top:20px;
+margin-left:auto;
+margin-right:auto;}
+.text{
+	margin:0px;
+	padding-left:25px;	
+	padding-top:25px;
+	padding-bottom:10px;
+	font-style:oblique;
+	color:#FFFFFF;
+	font-size:20px;
+      }
+
+#rightdiv { float:right;
+width:600px;
+height:auto;
+background-color:#399;} 
+.mapchb{ color:#FFF;
+margin-left:25px;
+margin-top:10px;
+
+}
+.Geo {
+	margin-left:150px;
+	margin-top:15px;
+	-moz-box-shadow:inset -3px 0px 48px 11px #cae3fc;
+	-webkit-box-shadow:inset -3px 0px 48px 11px #cae3fc;
+	box-shadow:inset -3px 0px 48px 11px #cae3fc;
+	background:-webkit-gradient( linear, left top, left bottom, color-stop(0.05, #79bbff), color-stop(1, #4197ee) );
+	background:-moz-linear-gradient( center top, #79bbff 5%, #4197ee 100% );
+	filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#79bbff', endColorstr='#4197ee');
+	background-color:#79bbff;
+	-webkit-border-top-left-radius:42px;
+	-moz-border-radius-topleft:42px;
+	border-top-left-radius:42px;
+	-webkit-border-top-right-radius:42px;
+	-moz-border-radius-topright:42px;
+	border-top-right-radius:42px;
+	-webkit-border-bottom-right-radius:42px;
+	-moz-border-radius-bottomright:42px;
+	border-bottom-right-radius:42px;
+	-webkit-border-bottom-left-radius:42px;
+	-moz-border-radius-bottomleft:42px;
+	border-bottom-left-radius:42px;
+	text-indent:-2px;
+	border:1px solid #469df5;
+	display:inline-block;
+	color:#ffffff;
+	font-family:Comic Sans MS;
+	font-size:40px;
+	font-weight:bold;
+	font-style:normal;
+	height:100px;
+	line-height:100px;
+	width:106px;
+	text-decoration:none;
+	text-align:center;
+	text-shadow:1px 1px 0px #287ace;
+}
+.Geo:hover {
+	background:-webkit-gradient( linear, left top, left bottom, color-stop(0.05, #4197ee), color-stop(1, #79bbff) );
+	background:-moz-linear-gradient( center top, #4197ee 5%, #79bbff 100% );
+	filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#4197ee', endColorstr='#79bbff');
+	background-color:#4197ee;
+}.Geo:active {
+	position:relative;
+	top:1px;
+}
+.textin{ margin-left:30px;}

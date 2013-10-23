@@ -1,0 +1,62 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+  <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <style>
+#map-canvas {
+        height: 350px;
+		width:350px;
+		margin-top:15px;
+		margin-left:25px;
+        padding: 0px;
+      }
+    </style>
+    <script src="https://maps.googleapis.com/maps/api/js?v=3.exp&sensor=false"></script>
+    <script>
+var map;
+function initialize() {
+  var mapOptions = {
+    zoom: 10,
+    center: new google.maps.LatLng(59.89444, 30.26417),
+    mapTypeId: google.maps.MapTypeId.ROADMAP
+  };
+  map = new google.maps.Map(document.getElementById('map-canvas'),
+      mapOptions);
+}
+
+google.maps.event.addDomListener(window, 'load', initialize);
+
+    </script>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<link rel="stylesheet" type="text/css" href="css/geocss.css">
+<title>Geo Twitter</title>
+</head>
+
+<body>
+<div id="head"><img class="twit" src="images/images.gif" /><img class="headimg"  src="images/Безымянный.png" /></div>
+<div id="bodydiv">
+<div id="leftdiv">
+<div id="searchbox">
+<div id="searchbar">
+<p class="text">Type Twitter account id and Click Geo</p>
+<form>
+<input type="text" class="textin"/>
+
+</form>
+<form class="mapchb">
+<input type="checkbox" class="checkbox" name="map" value="googlemap"  />See on map 
+<form/>
+</div >
+</div>
+<a href="#" class="Geo">Geo</a>
+<div id="map-canvas"></div>
+
+</div>
+<div id="rightdiv"></div>
+
+</div>
+<div id="tail"></div>
+</body>
+</html>
