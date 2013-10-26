@@ -11,7 +11,9 @@
 		</appkeys>
 	</twitter>
 	<database>
-		<database_name></database_name>
-		<user_name></user_name>
+		<host>127.0.0.1</host>
+		<database_name>geotwitter</database_name>
+		<user_name>root</user_name>
+		<password></password>
 	</database>
 </GeoTwitterConfigs>

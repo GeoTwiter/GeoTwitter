@@ -13,11 +13,12 @@ CREATE TABLE  tw_user
 
 CREATE TABLE tw_tweet 
 ( 
-tweet_id bigint NOT NULL, 
-tweet_text varchar(140), 
-tweet_date timestamp NOT NULL, 
-coordinates point NOT NULL, 
-place_full_name varchar(255),
-user_id bigint NOT NULL references tw_user(user_id), 
-PRIMARY KEY(tweet_id) 
+	tweet_id bigint NOT NULL, 
+	tweet_text varchar(140), 
+	tweet_date timestamp NOT NULL, 
+	place_latitude float(10,7) NOT NULL,
+	place_longtitude float (10,7) NOT NULL,
+	place_full_name varchar(255),
+	user_id bigint NOT NULL references tw_user(user_id), 
+	PRIMARY KEY(tweet_id) 
 );
