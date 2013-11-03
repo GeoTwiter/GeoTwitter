@@ -9,10 +9,21 @@
 			<oauth_token></oauth_token>
 			<oauth_token_secret></oauth_token_secret>
 		</appkeys>
+		<time_window>900</time_window>
+		<user_timeline>
+			<timeline_statuses_max>3200</timeline_statuses_max>
+			<page_size>200</page_size>
+			<limit_user>180</limit_user>
+			<limit_app>300</limit_app>
+		</user_timeline>
+		<show>
+			<limit_user>180</limit_user>
+			<limit_app>180</limit_app>
+		</show>
 	</twitter>
 	<database>
 		<host>127.0.0.1</host>
-		<database_name>geotwitter</database_name>
+		<database_name>geotwitter1</database_name>
 		<user_name>root</user_name>
 		<password></password>
 	</database>
