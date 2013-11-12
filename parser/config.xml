@@ -20,6 +20,12 @@
 			<limit_user>180</limit_user>
 			<limit_app>180</limit_app>
 		</show>
+		<errors>
+			<connection>
+				<attempts>3</attempts>
+				<timeout>10</timeout>
+			</connection>
+		</errors>
 	</twitter>
 	<database>
 		<host>127.0.0.1</host>

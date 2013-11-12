@@ -36,7 +36,7 @@ class Harvester:
 class DBCursor:
 	def __init__ (self, cursor):
 		self.db_cursor = cursor
-		self.add_user = "INSERT INTO tw_user (user_id, username, screen_name, profile_image_url, last_tweet_id, last_statuses_count) VALUES (%s, %s, %s, %s)"
+		self.add_user = "INSERT INTO tw_user (user_id, username, screen_name, profile_image_url, last_tweet_id, last_statuses_count) VALUES (%s, %s, %s, %s, %s, %s)"
 		self.add_tweet = "INSERT INTO tw_tweet (user_id, tweet_id, tweet_date, tweet_text, place_latitude, place_longtitude, place_full_name) VALUES (%s, %s, %s, %s, %s, %s, %s)"
 		self.update_user = "UPDATE tw_user SET last_tweet_id = %s, last_statuses_count = %s WHERE user_id = %s"
 		self.select_user = "SELECT last_tweet_id, last_statuses_count FROM tw_user WHERE user_id = %s"
@@ -183,7 +183,54 @@ class ParserREST:
 					max_id = user_timeline[-1]['id'] - 1
 				else:
 					process = False
-		#print('statuses_count: {}, request_counter: {}'.format(statuses_count, self.timeline_request_counter))
+		return {'statuses_count':statuses_count,'last_id':since_id}
+
+	def get_user_timeline_test(self, user_id, since_id):
+		statuses_count = 0
+		if since_id > 1:
+			since_id_tmp = since_id - 1
+		else:
+			since_id_tmp = 1
+		first = True
+		process = True
+		while process:
+			if (time.time() - self.time_start) > self.time_window:
+				self.time_start = time.time()
+				self.timeline_request_counter = self.timeline_limit_user
+			if self.timeline_request_counter == 0:
+				self.timeline_request_counter = self.timeline_limit_user
+			else:
+				self.timeline_request_counter = self.timeline_request_counter - 1
+				if first:
+					user_timeline = [{'user':{'id':user_id,'name':'test_user','screen_name':'test_user','profile_image_url':'testurl'},
+						'id':since_id + 1,'created_at':'Sun Oct 13 15:07:48 +0000 2013',
+						'text':str(time.time()),
+						'coordinates':{'coordinates':[1, 1]}},
+						{'user':{'id':user_id,'name':'test_user','screen_name':'test_user','profile_image_url':'testurl'},
+						'id':since_id,'created_at':'Sun Oct 13 15:07:48 +0000 2013',
+						'text':str(time.time()),
+						'coordinates':{'coordinates':[1, 1]}}]
+					first = False
+				else:
+					user_timeline = [{'user':{'id':user_id,'name':'test_user','screen_name':'test_user','profile_image_url':'testurl'},
+						'id':since_id + 1,'created_at':'Sun Oct 13 15:07:48 +0000 2013',
+						'text':str(time.time()),
+						'coordinates':{'coordinates':[1, 1]}},
+						{'user':{'id':user_id,'name':'test_user','screen_name':'test_user','profile_image_url':'testurl'},
+						'id':since_id,'created_at':'Sun Oct 13 15:07:48 +0000 2013',
+						'text':str(time.time()),
+						'coordinates':{'coordinates':[1, 1]}}]
+				if len(user_timeline) > 0:
+					if user_timeline[-1]['id'] == since_id:
+						del(user_timeline[-1])
+						process = False
+					statuses_count = statuses_count + len(user_timeline)
+					for status in user_timeline:
+						if not (status['coordinates'] is None and status['place'] is None):
+							self.db_cursor.add_tweet_data(status)
+					max_id = user_timeline[-1]['id'] - 1
+				else:
+					process = False
 		return {'statuses_count':statuses_count,'last_id':since_id}
 	
 class ParserStream(TwythonStreamer):
@@ -194,6 +241,29 @@ class ParserStream(TwythonStreamer):
 			config['appkeys']['oauth_token'],
 			config['appkeys']['oauth_token_secret'])
 		self.db_cursor = DBCursor(db_cursor)
+		self.errors = config['errors']
+		self.username_only = True;
+		
+	def parse(self, username_only = True):
+		self.username_only = username_only;
+		process = True
+		counter = 0
+		last_error_time = time.time()
+		while process:
+			try:
+				self.statuses.filter(locations='-180,-90,180,90')
+			except Exception as e:
+				print("Twitter connection error. {}".format(e))
+				print("Attempting to connect.")
+				if time.time() - last_error_time > float(self.errors['connection']['timeout']) * float(self.errors['connection']['attempts']):
+					counter = int(self.errors['connection']['attempts'])
+					last_error_time = time.time()
+				counter = counter - 1
+				if counter == 0:
+					print("Can not to connect.")
+					process = False
+				else:
+					time.sleep(int(self.errors['connection']['timeout']))
 
 	def test_data(self, start_user_id, tweet_id_step):
 		data = {'user':{'id':start_user_id,'name':'test_user','screen_name':'test_user','profile_image_url':'testurl'},
@@ -209,11 +279,13 @@ class ParserStream(TwythonStreamer):
 	def on_success(self, data):
 		if 'user' in data:
 			if self.db_cursor.tweet_in_db(data['id']) is None:
-				statistic = self.db_cursor.select_user_statistic(data['user']['id'])
-				if statistic is None:
+				if self.username_only:
 					self.db_cursor.add_user_data(data['user'])
-				self.db_cursor.add_tweet_data(data)
-		#else : print(data['limit']['track'])
+				else:
+					statistic = self.db_cursor.select_user_statistic(data['user']['id'])
+					if statistic is None:
+						self.db_cursor.add_user_data(data['user'])
+					self.db_cursor.add_tweet_data(data)
 
 	def on_error(self, status_code, data):
 		print ('Stream error code {}'.format(status_code))
