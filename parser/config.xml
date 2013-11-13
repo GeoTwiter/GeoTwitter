@@ -16,6 +16,10 @@
 			<limit_user>180</limit_user>
 			<limit_app>300</limit_app>
 		</user_timeline>
+		<user_in_base>
+			<list_limit>100</list_limit>
+			<timeout>3600</timeout>
+		</user_in_base>
 		<show>
 			<limit_user>180</limit_user>
 			<limit_app>180</limit_app>
@@ -29,7 +33,7 @@
 	</twitter>
 	<database>
 		<host>127.0.0.1</host>
-		<database_name>geotwitter1</database_name>
+		<database_name>geotwitter</database_name>
 		<user_name>root</user_name>
 		<password></password>
 	</database>

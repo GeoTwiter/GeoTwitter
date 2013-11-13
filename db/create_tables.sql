@@ -7,10 +7,12 @@ CREATE TABLE  tw_user
    user_id bigint NOT NULL,
    last_tweet_id bigint NOT NULL,
    last_statuses_count bigint NOT NULL,
+   last_update_time int NOT NULL,
+   priority int NOT NULL,
    username varchar(20) NOT NULL,
    screen_name varchar(20) NOT NULL,
    profile_image_url varchar(255) NOT NULL,
-   PRIMARY KEY(user_id)
+   PRIMARY KEY(user_id) 
 );
 
 CREATE TABLE tw_tweet 

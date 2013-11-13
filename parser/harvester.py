@@ -36,18 +36,19 @@ class Harvester:
 class DBCursor:
 	def __init__ (self, cursor):
 		self.db_cursor = cursor
-		self.add_user = "INSERT INTO tw_user (user_id, username, screen_name, profile_image_url, last_tweet_id, last_statuses_count) VALUES (%s, %s, %s, %s, %s, %s)"
-		self.add_tweet = "INSERT INTO tw_tweet (user_id, tweet_id, tweet_date, tweet_text, place_latitude, place_longtitude, place_full_name) VALUES (%s, %s, %s, %s, %s, %s, %s)"
-		self.update_user = "UPDATE tw_user SET last_tweet_id = %s, last_statuses_count = %s WHERE user_id = %s"
+		self.add_user = "INSERT INTO tw_user (user_id, username, screen_name, profile_image_url, last_tweet_id, last_statuses_count, last_update_time, priority) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+		self.add_tweet = "INSERT INTO tw_tweet (user_id, tweet_id, tweet_date, tweet_text, place_longtitude, place_latitude, place_full_name) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+		self.update_user = "UPDATE tw_user SET last_tweet_id = %s, last_statuses_count = %s, last_update_time = %s, priority = %s WHERE user_id = %s"
 		self.select_user = "SELECT last_tweet_id, last_statuses_count FROM tw_user WHERE user_id = %s"
 		self.select_tweet = "SELECT user_id FROM tw_tweet WHERE tweet_id = %s"
+		self.select_users_for_processing = "SELECT user_id FROM tw_user WHERE last_update_time < %s limit %s"
 	
 	def add_user_data(self, data):
 		user_data = (data['id'],
 			data['name'],
 			data['screen_name'],
 			data['profile_image_url'],
-			1, 0)
+			1, 0, 0, 0)
 		self.db_cursor.execute(self.add_user, user_data)
 		self.db_cursor.execute('COMMIT')
 	
@@ -71,10 +72,18 @@ class DBCursor:
 		self.db_cursor.execute(self.add_tweet, tweet_data)
 		self.db_cursor.execute('COMMIT')
 	
+	def get_parse_user_list(self, last_time, list_size):
+		user_data = (int(time.time())-last_time, list_size)
+		self.db_cursor.execute(self.select_users_for_processing, user_data)
+		return self.db_cursor.fetchall()
+	
 	def update_user_statistic(self, data):
 		user_data = (data['last_tweet_id'],
 			data['last_statuses_count'],
+			int(time.time()),
+			0,
 			data['user_id'])
+		print(user_data)
 		self.db_cursor.execute(self.update_user, user_data)
 		self.db_cursor.execute('COMMIT')
 		
@@ -103,6 +112,8 @@ class ParserREST:
 		self.page_size = int(config['user_timeline']['page_size'])
 		self.time_window = float(config['time_window'])
 		self.time_start = time.time()
+		self.last_time = int(config['user_in_base']['timeout'])
+		self.list_size = int(config['user_in_base']['list_limit'])
 		try:
 			data = self.twitter.get_application_rate_limit_status(resources = 'statuses')
 			self.timeline_request_counter = data['resources']['statuses']['/statuses/user_timeline']['remaining']
@@ -111,6 +122,17 @@ class ParserREST:
 			print ('Error in ParserREST.__init__')
 			print (e)
 
+	def parse(self):
+		process = True
+		while process:
+			users_list = self.db_cursor.get_parse_user_list(last_time = self.last_time,
+															list_size = self.list_size)
+			if len(users_list) > 0:
+				for i in users_list:
+					self.parse_twitter_user(i[0])
+			else:
+				process = False
+	
 	def parse_twitter_user(self,user_id):
 		print('user_id: {}'.format(user_id))
 		try:
@@ -146,6 +168,7 @@ class ParserREST:
 			since_id_tmp = 1
 		first = True
 		process = True
+		last_id = since_id
 		while process:
 			if (time.time() - self.time_start) > self.time_window:
 				self.time_start = time.time()
@@ -162,7 +185,6 @@ class ParserREST:
 						exclude_replies = True,
 						include_rts = False,
 						trim_user = True)
-					first = False
 				else:
 					user_timeline = self.twitter.get_user_timeline(user_id = user_id, 
 						count = self.page_size,
@@ -173,17 +195,20 @@ class ParserREST:
 						trim_user = True)
 				#print('len(user_timeline): {}'.format(len(user_timeline)))
 				if len(user_timeline) > 0:
+					if first:
+						last_id = user_timeline[0]['id']
+						first = False
 					if user_timeline[-1]['id'] == since_id:
 						del(user_timeline[-1])
 						process = False
-					statuses_count = statuses_count + len(user_timeline)
 					for status in user_timeline:
 						if not (status['coordinates'] is None and status['place'] is None):
 							self.db_cursor.add_tweet_data(status)
+							statuses_count = statuses_count + 1
 					max_id = user_timeline[-1]['id'] - 1
 				else:
 					process = False
-		return {'statuses_count':statuses_count,'last_id':since_id}
+		return {'statuses_count':statuses_count,'last_id':last_id}
 
 	def get_user_timeline_test(self, user_id, since_id):
 		statuses_count = 0
@@ -278,10 +303,12 @@ class ParserStream(TwythonStreamer):
 			
 	def on_success(self, data):
 		if 'user' in data:
-			if self.db_cursor.tweet_in_db(data['id']) is None:
-				if self.username_only:
+			if self.username_only:
+				statistic = self.db_cursor.select_user_statistic(data['user']['id'])
+				if statistic is None:
 					self.db_cursor.add_user_data(data['user'])
-				else:
+			else:
+				if self.db_cursor.tweet_in_db(data['id']) is None:
 					statistic = self.db_cursor.select_user_statistic(data['user']['id'])
 					if statistic is None:
 						self.db_cursor.add_user_data(data['user'])
