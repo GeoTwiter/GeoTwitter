@@ -1,6 +1,10 @@
 # GeoTwitter Harvester
+import logging
+import logging.handlers
 import time
+from copy import deepcopy
 from datetime import datetime
+from multiprocessing import Process, Queue, Pipe, current_process, freeze_support, cpu_count
 from xml.etree.ElementTree import ElementTree
 import mysql.connector
 from mysql.connector import errorcode
@@ -22,11 +26,134 @@ class Harvester:
         self.db_cursor = DBCursor(self.config['database'])
 
     def connect_to_twitter_stream(self):
-        self.stream = ParserStream(self.config)
+        config = deepcopy(self.config)
+        config['twitter']['appkeys'] = self.config['twitter']['appkeys']['main']
+        self.stream = ParserStream(config)
     
     def connect_to_twitter_rest(self):
-        self.rest = ParserREST(self.config)
+        config = deepcopy(self.config)
+        config['twitter']['appkeys'] = self.config['twitter']['appkeys']['main']
+        self.rest = ParserREST(config)
+        
+    def probe_log_configurer(self, queue):
+        h = logging.handlers.QueueHandler(queue)
+        root = logging.getLogger()
+        root.addHandler(h)
+        root.setLevel(logging.DEBUG)
+        
+    def probe_logger(self, queue):
+        logger = logging.getLogger('root.logger')
+        h = logging.handlers.TimedRotatingFileHandler('Harvester.log', when='midnight')
+        f = logging.Formatter('%(asctime)s %(processName)-10s %(name)s %(levelname)-8s %(message)s')
+        filt = logging.Filter(name='root')
+        h.setFormatter(f)
+        logger.addHandler(h)
+        logger.setLevel(logging.DEBUG)
+        logger.addFilter(filt)
+        logger.info('Logger: Start')
+        while True:
+            try:
+                record = queue.get()
+                logger.handle(record)
+                if record.name == 'root.cmd_stop':
+                    break
+            except:
+                pass
 
+    def probe_rest(self, config, task_queue, log_queue, control):
+        self.probe_log_configurer(log_queue)
+        logging.info('Start probe_rest id {}'.format(config['id']))
+        probe = ParserREST(config)
+        while True:
+            try:
+                if control.poll():
+                    if control.recv() == 'Stop':
+                        break
+                probe.parse_twitter_user(task_queue.get(True,5))
+            except Queue.Empty:
+                pass
+            except Exception as e:
+                logging.exception(e)
+                time.sleep(5)
+                continue
+        control.send('Stop {}'.format(config['id']))
+        logging.info('Stop probe_rest id {}'.format(config['id']))
+
+    def probe_stream(self, config, log_queue, control):
+        self.probe_log_configurer(log_queue)
+        logging.info('Start probe_stream id {}'.format(config['id']))
+        try:
+            probe = ParserStream(config)
+            while True:
+                if control.poll():
+                    if control.recv() == 'Stop':
+                        break
+                probe.parse(amount_of_items=200)
+        except Exception as e:
+            logging.exception(e)
+        control.send('Stop {}'.format(config['id']))
+        logging.info('Stop probe_stream id {}'.format(config['id']))
+
+    def work(self):
+        print('Harvester: started.')
+        log_queue = Queue()
+        self.probe_log_configurer(log_queue)
+        Process(target=self.probe_logger, args=(log_queue,)).start()
+        number_of_processes = cpu_count() * 2
+        control = list()
+        for i in range(number_of_processes):
+            parent_conn, child_conn = Pipe()
+            control.append((parent_conn, child_conn))
+            
+        last_time = int(self.config['twitter']['user_in_base']['timeout'])
+        list_size = int(self.config['twitter']['user_in_base']['list_limit'])
+        task_queue = Queue(maxsize=list_size)
+
+        tmp_config = deepcopy(self.config)
+        tmp_config.update({'id':0})
+        tmp_config['twitter']['appkeys'] = self.config['twitter']['appkeys']['stream']
+
+        nexus = list()
+        nexus.append(Process(target=self.probe_stream,
+                args=(tmp_config, log_queue, control[0][1]),
+                name='probe_stream'
+                ))
+        nexus[0].start()
+        time.sleep(30)
+        for i in range(1,number_of_processes):
+            tmp_config['id'] = i
+            tmp_config['twitter']['appkeys'] = self.config['twitter']['appkeys']['rest_{}'.format(i)]
+            nexus.append(Process(target=self.probe_rest,
+                    args=(tmp_config, task_queue, log_queue, control[i][1]),
+                    name='probe_rest_{}'.format(i)
+                    ))
+            nexus[-1].start()
+
+        self.connect_to_database()
+        while True:
+            users_list = self.db_cursor.get_parse_user_list(
+                                        last_time = last_time,
+                                        list_size = list_size)
+            if users_list:
+                for i in users_list:
+                    while task_queue.full():
+                        time.sleep(5)
+                    task_queue.put(i[0])
+            else:
+                break
+
+        for i in range(number_of_processes):
+            control[i][0].send('Stop')
+            
+        for i in range(1,number_of_processes):
+            if not control[i][0].poll():
+                nexus[i].join()
+
+        cmd_logger = logging.getLogger('root.cmd_stop')
+        cmd_logger.info('Logger: Stop')
+        nexus[0].join()
+        print('Harvester: stopped.')
+                
 class DBCursor:
     def __init__ (self, config):
         self.config = config
@@ -37,7 +164,7 @@ class DBCursor:
                                             user = self.config['user_name'],
                                             password = self.config['password'])
         except mysql.connector.Error as e:
-            print("Database connection error. Error code: {}".format(e))
+            logging.exception("Database connection error. Error code: {}".format(e))
         self.db_cursor = self.db_connection.cursor()
         
         self.add_user = ("INSERT INTO tw_user "
@@ -68,9 +195,7 @@ class DBCursor:
             self.db_cursor.execute(self.add_user, user_data)
             self.db_cursor.execute('COMMIT')
         except Exception as e:
-                print ('Error in DBCursor.add_user_data')
-                print (e)
-                print (user_data)
+                logging.exception('DBCursor.add_user_data: {} Data: {}'.format(e, user_data))
                 return False
         return True
     
@@ -105,14 +230,10 @@ class DBCursor:
             if e.errno == errorcode.ER_DUP_ENTRY:
                 return True
             else:
-                print ('MySQLError in DBCursor.add_tweet_data')
-                print (e)
-                print (data)
+                logging.exception('DBCursor.add_tweet_data: {} Data: {}'.format(e, data))
                 return False    
         except Exception as e:
-            print ('Error in DBCursor.add_tweet_data')
-            print (e)
-            print (data)
+            logging.exception('DBCursor.add_tweet_data: {} Data: {}'.format(e, data))
             return False
         return True
     
@@ -131,13 +252,10 @@ class DBCursor:
             self.db_cursor.execute(self.update_user, user_data)
             self.db_cursor.execute('COMMIT')
         except Exception as e:
-                print ('Error in DBCursor.update_user_statistic')
-                print (e)
-                print (user_data)
-                return False
+            logging.exception('DBCursor.update_user_statistic: {} Data: {}'.format(e, user_data))
+            return False
         return True
         
-    
     def select_user_statistic(self, user_id):
         self.db_cursor.execute(self.select_user % user_id)
         result = self.db_cursor.fetchone()
@@ -167,8 +285,7 @@ class ParserREST:
         except TwythonError as e:
             self.timeline_request_counter = int(self.config['twitter']
                                                     ['user_timeline']['limit_user'])
-            print ('Error in ParserREST.__init__')
-            print (e)
+            logging.exception('ParserREST.__init__: {}'.format(e))
 
     def parse(self):
         self.process = True
@@ -183,7 +300,7 @@ class ParserREST:
                 self.process = False
     
     def parse_twitter_user(self,user_id):
-        print('user_id: {}'.format(user_id))
+        logging.info('user_id: {}'.format(user_id))
         result = 0
         try:
             statistic = self.db_cursor.select_user_statistic(user_id)
@@ -209,10 +326,8 @@ class ParserREST:
                                                 statistic['statuses_count'],
                             'user_id':user_id})
         except Exception as e:
-                print ('Error in ParserREST.parse_twitter_user')
-                print (e)
-                print (result)
-                return
+            logging.exception('ParserREST.parse_twitter_user: {} Data: {}'.format(e, result))
+            return
     
     def get_user_timeline(self, user_id, since_id):
         statuses_count = 0
@@ -231,7 +346,7 @@ class ParserREST:
                 self.timeline_request_counter = int(self.config['twitter']
                                                     ['user_timeline']['limit_user'])
             if self.timeline_request_counter == 0:
-                print('Have to wait.')
+                logging.info('Have to wait.')
                 time.sleep(float(self.config['twitter']['time_window']) - (current_time - self.time_start))
             else:
                 self.timeline_request_counter = self.timeline_request_counter - 1
@@ -258,12 +373,10 @@ class ParserREST:
                 except TwythonError as e:
                     if e.error_code == 401:
                         process = False
-                    print('TwythonError in ParserREST.get_user_timeline')
-                    print(e)
+                    logging.exception('ParserREST.get_user_timeline: {}'.format(e))
                     continue
                 except ConnectionError as e:
-                    print('ConnectionError in ParserREST.get_user_timeline')
-                    print(e)
+                    logging.exception('ParserREST.get_user_timeline: {}'.format(e))
                     time.sleep(30)
                     self.twitter = Twython(self.config['twitter']['appkeys']['app_key'],
                                         self.config['twitter']['appkeys']['app_secret'],
@@ -370,8 +483,7 @@ class ParserStream(TwythonStreamer):
             try:
                 self.statuses.filter(locations='-180,-90,180,90')
             except Exception as e:
-                print("Twitter connection error. {}".format(e))
-                print("Attempting to connect.")
+                logging.exception('ParserStream: {}'.format(e))
                 if ((time.time() - last_error_time) > 
                             (float(self.config['twitter']['errors']['connection']['timeout']) * 
                             float(self.config['twitter']['errors']['connection']['attempts']))):
@@ -379,7 +491,7 @@ class ParserStream(TwythonStreamer):
                     last_error_time = time.time()
                 counter = counter - 1
                 if counter == 0:
-                    print("Can not to connect.")
+                    logging.exception("ParserStream: Can not to connect.")
                     self.process = False
                 else:
                     time.sleep(int(self.config['twitter']['errors']['connection']['timeout']))
@@ -413,11 +525,19 @@ class ParserStream(TwythonStreamer):
                         self.db_cursor.add_user_data(data['user'])
                     self.db_cursor.add_tweet_data(data)
                     self.amount_of_items = self.amount_of_items - 1
-            if self.amount_of_items == 1:
+            if self.amount_of_items == 0:
                 self.disconnect()
                 self.process = False
 
     def on_error(self, status_code, data):
-        print ('Stream error code {}'.format(status_code))
+        logging.exception('Stream error code: {}'.format(status_code))
         self.disconnect()
         
+def main():
+    test = Harvester('D:\Dropbox\Programming\Python\config.xml')
+    test.work()
+        
+        
+if __name__ == '__main__':
+    freeze_support()
+    main()

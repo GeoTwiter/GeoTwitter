@@ -1,13 +1,46 @@
 <?xml version="1.0"?>
 <GeoTwitterConfigs>
 	<general>
+		<units_amount>3</units_amount>
 	</general>
 	<twitter>
 		<appkeys>
-			<app_key></app_key>
-			<app_secret></app_secret>
-			<oauth_token></oauth_token>
-			<oauth_token_secret></oauth_token_secret>
+			<main>
+				<app_key></app_key>
+				<app_secret></app_secret>
+				<oauth_token></oauth_token>
+				<oauth_token_secret></oauth_token_secret>
+			</main>
+			<stream>
+				<app_key></app_key>
+				<app_secret></app_secret>
+				<oauth_token></oauth_token>
+				<oauth_token_secret></oauth_token_secret>
+			</stream>
+			<rest_1>
+				<app_key></app_key>
+				<app_secret></app_secret>
+				<oauth_token></oauth_token>
+				<oauth_token_secret></oauth_token_secret>
+			</rest_1>
+			<rest_2>
+				<app_key></app_key>
+				<app_secret></app_secret>
+				<oauth_token></oauth_token>
+				<oauth_token_secret></oauth_token_secret>
+			</rest_2>
+			<rest_3>
+				<app_key></app_key>
+				<app_secret></app_secret>
+				<oauth_token></oauth_token>
+				<oauth_token_secret></oauth_token_secret>
+			</rest_3>
+			<rest_4>
+				<app_key></app_key>
+				<app_secret></app_secret>
+				<oauth_token></oauth_token>
+				<oauth_token_secret></oauth_token_secret>
+			</rest_4>
 		</appkeys>
 		<time_window>900</time_window>
 		<user_timeline>
@@ -18,7 +51,7 @@
 		</user_timeline>
 		<user_in_base>
 			<list_limit>100</list_limit>
-			<timeout>3600</timeout>
+			<timeout>80000</timeout>
 		</user_in_base>
 		<show>
 			<limit_user>180</limit_user>
@@ -33,7 +66,7 @@
 	</twitter>
 	<database>
 		<host>127.0.0.1</host>
-		<database_name>geotwitter</database_name>
+		<database_name>geotwitter1</database_name>
 		<user_name>root</user_name>
 		<password></password>
 	</database>
