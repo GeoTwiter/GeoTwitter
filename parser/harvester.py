@@ -130,17 +130,26 @@ class Harvester:
             nexus[-1].start()
 
         self.connect_to_database()
-        while True:
-            users_list = self.db_cursor.get_parse_user_list(
-                                        last_time = last_time,
-                                        list_size = list_size)
-            if users_list:
-                for i in users_list:
-                    while task_queue.full():
-                        time.sleep(5)
-                    task_queue.put(i[0])
-            else:
-                break
+        try:
+            tmp_list = list()
+            tmp_size = number_of_processes - 1
+            while True:
+                users_list = self.db_cursor.get_parse_user_list(
+                                            last_time = last_time,
+                                            list_size = list_size)
+                if users_list:
+                    for i in users_list:
+                        if i not in tmp_list:
+                            task_queue.put(i[0])
+                    tmp_list = users_list[-tmp_size:]
+                    while not task_queue.empty():
+                        time.sleep(1)
+                else:
+                    break
+        except KeyboardInterrupt:
+            logger = logging.getLogger('root')
+            logger.info('Ctrl + C received.')
+            print('Main cycle exited. Wait while tasks are completed.')
 
         for i in range(number_of_processes):
             control[i][0].send('Stop')
@@ -162,7 +171,8 @@ class DBCursor:
                                             host = self.config['host'],
                                             database = self.config['database_name'],
                                             user = self.config['user_name'],
-                                            password = self.config['password'])
+                                            password = self.config['password'],
+                                            autocommit = True)
         except mysql.connector.Error as e:
             logging.exception("Database connection error. Error code: {}".format(e))
         self.db_cursor = self.db_connection.cursor()
@@ -193,7 +203,6 @@ class DBCursor:
                         data['profile_image_url'],
                         1, 0, 0, 0)
             self.db_cursor.execute(self.add_user, user_data)
-            self.db_cursor.execute('COMMIT')
         except Exception as e:
                 logging.exception('DBCursor.add_user_data: {} Data: {}'.format(e, user_data))
                 return False
@@ -225,13 +234,6 @@ class DBCursor:
                         latitude,
                         place)
             self.db_cursor.execute(self.add_tweet, tweet_data)
-            self.db_cursor.execute('COMMIT')
-        except mysql.connector.Error as e:
-            if e.errno == errorcode.ER_DUP_ENTRY:
-                return True
-            else:
-                logging.exception('DBCursor.add_tweet_data: {} Data: {}'.format(e, data))
-                return False    
         except Exception as e:
             logging.exception('DBCursor.add_tweet_data: {} Data: {}'.format(e, data))
             return False
@@ -250,7 +252,6 @@ class DBCursor:
                         0,
                         data['user_id'])
             self.db_cursor.execute(self.update_user, user_data)
-            self.db_cursor.execute('COMMIT')
         except Exception as e:
             logging.exception('DBCursor.update_user_statistic: {} Data: {}'.format(e, user_data))
             return False
