@@ -74,8 +74,7 @@ class Harvester:
                 pass
             except Exception as e:
                 logging.exception(e)
-                time.sleep(5)
-                continue
+                return
         control.send('Stop {}'.format(config['id']))
         logging.info('Stop probe_rest id {}'.format(config['id']))
 
@@ -91,6 +90,7 @@ class Harvester:
                 probe.parse(amount_of_items=200)
         except Exception as e:
             logging.exception(e)
+            return
         control.send('Stop {}'.format(config['id']))
         logging.info('Stop probe_stream id {}'.format(config['id']))
 
@@ -99,7 +99,18 @@ class Harvester:
         log_queue = Queue()
         self.probe_log_configurer(log_queue)
         Process(target=self.probe_logger, args=(log_queue,)).start()
-        number_of_processes = cpu_count() * 2
+
+        try:
+            self.connect_to_database()
+        except Exception as e:
+            print('Harvester: database conection fail')
+            cmd_logger = logging.getLogger('root.cmd_stop')
+            cmd_logger.info('Logger: Stop')
+            print('Harvester: stopped.')
+            return
+        print('connect_to_database')
+               
+        number_of_processes = cpu_count() * 2 + 1
         control = list()
         for i in range(number_of_processes):
             parent_conn, child_conn = Pipe()
@@ -128,8 +139,7 @@ class Harvester:
                     name='probe_rest_{}'.format(i)
                     ))
             nexus[-1].start()
-
-        self.connect_to_database()
+        
         try:
             tmp_list = list()
             tmp_size = number_of_processes - 1
@@ -173,10 +183,11 @@ class DBCursor:
                                             user = self.config['user_name'],
                                             password = self.config['password'],
                                             autocommit = True)
+            self.db_cursor = self.db_connection.cursor()
         except mysql.connector.Error as e:
-            logging.exception("Database connection error. Error code: {}".format(e))
-        self.db_cursor = self.db_connection.cursor()
-        
+            if not self.restore_connection(e):
+                raise
+
         self.add_user = ("INSERT INTO tw_user "
                         "(user_id, username, screen_name, profile_image_url, "
                         "last_tweet_id, last_statuses_count, last_update_time, priority) "
@@ -195,70 +206,125 @@ class DBCursor:
         self.select_users_for_processing = ("SELECT user_id FROM tw_user "
                                             "WHERE last_update_time < %s limit %s")
     
+    def restore_connection(self, e):
+        if e.errno in (errorcode.CR_SOCKET_CREATE_ERROR,
+                        errorcode.CR_CONNECTION_ERROR,
+                        errorcode.CR_CONN_HOST_ERROR,
+                        errorcode.CR_IPSOCK_ERROR,
+                        errorcode.CR_UNKNOWN_HOST,
+                        errorcode.CR_SERVER_LOST_EXTENDED,
+                        errorcode.ER_QUERY_INTERRUPTED):
+            logging.warning("Restore database connection")
+            i = int(self.config['errors']['connection']['attempts'])
+            while True:
+                try:
+                    self.db_connection = mysql.connector.connect(
+                                                host = self.config['host'],
+                                                database = self.config['database_name'],
+                                                user = self.config['user_name'],
+                                                password = self.config['password'],
+                                                autocommit = True)
+                    self.db_cursor = self.db_connection.cursor()
+                    logging.warning("Database connection restored")
+                    return True
+                except mysql.connector.Error as e:
+                    if i > 0:
+                        i = i - 1
+                        time.sleep(float(self.config['errors']['connection']['timeout']))
+                    else:
+                        logging.exception("DBCursor.restore_connection failed: {}".format(e))
+                        return False
+        else:
+            logging.exception("DBCursor: {}".format(e))
+            return False
+    
     def add_user_data(self, data):
+        user_data = (data['id'],
+                    data['name'],
+                    data['screen_name'],
+                    data['profile_image_url'],
+                    1, 0, 0, 0)
         try:
-            user_data = (data['id'],
-                        data['name'],
-                        data['screen_name'],
-                        data['profile_image_url'],
-                        1, 0, 0, 0)
             self.db_cursor.execute(self.add_user, user_data)
-        except Exception as e:
+        except mysql.connector.Error as e:
+            if not self.restore_connection(e):
                 logging.exception('DBCursor.add_user_data: {} Data: {}'.format(e, user_data))
-                return False
+                raise
+            else:
+                self.db_cursor.execute(self.add_user, user_data)
         return True
     
     def add_tweet_data(self, data):
+        if data['coordinates'] is None:
+            if data['place']['bounding_box'] is None:
+                longtitude = 404
+                latitude = 404
+            else:
+                longtitude = (data['place']['bounding_box']['coordinates'][0][0][0] + 
+                                data['place']['bounding_box']['coordinates'][0][2][0])/2
+                latitude = (data['place']['bounding_box']['coordinates'][0][0][1] + 
+                                data['place']['bounding_box']['coordinates'][0][2][1])/2
+        else:
+            longtitude = data['coordinates']['coordinates'][0]
+            latitude = data['coordinates']['coordinates'][1]
+        if data['place'] is None:    
+            place = 'N/A'
+        else:
+            place = data['place']['country'] + ', ' + data['place']['full_name']
+        tweet_data = (data['user']['id'],
+                    data['id'],
+                    datetime.strptime(data['created_at'], "%a %b %d %H:%M:%S %z %Y"),
+                    data['text'],
+                    longtitude,
+                    latitude,
+                    place)
         try:
-            if data['coordinates'] is None:
-                if data['place']['bounding_box'] is None:
-                    longtitude = 404
-                    latitude = 404
-                else:
-                    longtitude = (data['place']['bounding_box']['coordinates'][0][0][0] + 
-                                    data['place']['bounding_box']['coordinates'][0][2][0])/2
-                    latitude = (data['place']['bounding_box']['coordinates'][0][0][1] + 
-                                    data['place']['bounding_box']['coordinates'][0][2][1])/2
-            else:
-                longtitude = data['coordinates']['coordinates'][0]
-                latitude = data['coordinates']['coordinates'][1]
-            if data['place'] is None:    
-                place = 'N/A'
-            else:
-                place = data['place']['country'] + ', ' + data['place']['full_name']
-            tweet_data = (data['user']['id'],
-                        data['id'],
-                        datetime.strptime(data['created_at'], "%a %b %d %H:%M:%S %z %Y"),
-                        data['text'],
-                        longtitude,
-                        latitude,
-                        place)
             self.db_cursor.execute(self.add_tweet, tweet_data)
-        except Exception as e:
-            logging.exception('DBCursor.add_tweet_data: {} Data: {}'.format(e, data))
-            return False
+        except mysql.connector.Error as e:
+            if not self.restore_connection(e):
+                logging.exception('DBCursor.add_tweet_data: {} Data: {}'.format(e, data))
+                return False
+            else:
+                self.db_cursor.execute(self.add_tweet, tweet_data)
         return True
     
     def get_parse_user_list(self, last_time, list_size):
         user_data = (int(time.time())-last_time, list_size)
-        self.db_cursor.execute(self.select_users_for_processing, user_data)
+        try:
+            self.db_cursor.execute(self.select_users_for_processing, user_data)
+        except mysql.connector.Error as e:
+            if not self.restore_connection(e):
+                logging.exception('DBCursor.get_parse_user_list: {}'.format(e))
+                raise
+            else:
+                self.db_cursor.execute(self.select_users_for_processing, user_data)
         return self.db_cursor.fetchall()
     
     def update_user_statistic(self, data):
+        user_data = (data['last_tweet_id'],
+                    data['last_statuses_count'],
+                    int(time.time()),
+                    0,
+                    data['user_id'])
         try:
-            user_data = (data['last_tweet_id'],
-                        data['last_statuses_count'],
-                        int(time.time()),
-                        0,
-                        data['user_id'])
             self.db_cursor.execute(self.update_user, user_data)
-        except Exception as e:
-            logging.exception('DBCursor.update_user_statistic: {} Data: {}'.format(e, user_data))
-            return False
+        except mysql.connector.Error as e:
+            if not self.restore_connection(e):
+                logging.exception('DBCursor.update_user_statistic: {} Data: {}'.format(e, user_data))
+                raise
+            else:
+                self.db_cursor.execute(self.update_user, user_data)
         return True
         
     def select_user_statistic(self, user_id):
-        self.db_cursor.execute(self.select_user % user_id)
+        try:
+            self.db_cursor.execute(self.select_user % user_id)
+        except mysql.connector.Error as e:
+            if not self.restore_connection(e):
+                logging.exception('DBCursor.select_user_statistic: {}'.format(e))
+                raise
+            else:
+                self.db_cursor.execute(self.select_user % user_id)
         result = self.db_cursor.fetchone()
         if result is None:
             return None
@@ -266,7 +332,14 @@ class DBCursor:
             return {'last_tweet_id':result[0],'statuses_count':result[1]}
     
     def tweet_in_db(self, tweet_id):
-        self.db_cursor.execute(self.select_tweet % tweet_id)
+        try:
+            self.db_cursor.execute(self.select_tweet % tweet_id)
+        except mysql.connector.Error as e:
+            if not self.restore_connection(e):
+                logging.exception('DBCursor.select_user_statistic: {}'.format(e))
+                raise
+            else:
+                self.db_cursor.execute(self.select_tweet % tweet_id)
         return self.db_cursor.fetchone()
         
 class ParserREST:
@@ -326,7 +399,7 @@ class ParserREST:
                             'last_statuses_count':result['statuses_count'] +
                                                 statistic['statuses_count'],
                             'user_id':user_id})
-        except Exception as e:
+        except TwythonError as e:
             logging.exception('ParserREST.parse_twitter_user: {} Data: {}'.format(e, result))
             return
     
@@ -398,6 +471,8 @@ class ParserREST:
                                         status['place'] is None)):
                             if self.db_cursor.add_tweet_data(status):
                                 statuses_count = statuses_count + 1
+                            else:
+                                process = False
                 else:
                     process = False
         return {'statuses_count':statuses_count,'last_id':last_id}
@@ -483,7 +558,7 @@ class ParserStream(TwythonStreamer):
         while self.process:
             try:
                 self.statuses.filter(locations='-180,-90,180,90')
-            except Exception as e:
+            except TwythonError as e:
                 logging.exception('ParserStream: {}'.format(e))
                 if ((time.time() - last_error_time) > 
                             (float(self.config['twitter']['errors']['connection']['timeout']) * 

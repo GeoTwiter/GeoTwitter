@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <GeoTwitterConfigs>
 	<general>
-		<units_amount>3</units_amount>
+		<units_amount>4</units_amount>
 	</general>
 	<twitter>
 		<appkeys>
@@ -50,7 +50,7 @@
 			<limit_app>300</limit_app>
 		</user_timeline>
 		<user_in_base>
-			<list_limit>100</list_limit>
+			<list_limit>2000</list_limit>
 			<timeout>80000</timeout>
 		</user_in_base>
 		<show>
@@ -69,5 +69,11 @@
 		<database_name>geotwitter1</database_name>
 		<user_name>root</user_name>
 		<password></password>
+		<errors>
+			<connection>
+				<attempts>3</attempts>
+				<timeout>20</timeout>
+			</connection>
+		</errors>
 	</database>
 </GeoTwitterConfigs>
