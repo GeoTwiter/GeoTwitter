@@ -478,6 +478,7 @@ class ParserREST:
         return {'statuses_count':statuses_count,'last_id':last_id}
 
     def get_user_timeline_test(self, user_id, since_id):
+        since_id = 0
         statuses_count = 0
         if since_id > 1:
             since_id_tmp = since_id - 1
@@ -485,58 +486,78 @@ class ParserREST:
             since_id_tmp = 1
         first = True
         process = True
+        last_id = since_id
+        itr = 1
         while process:
-            if ((time.time() - self.time_start) > 
+            current_time = time.time()
+            #if ((current_time - self.time_start) >
+            if ((current_time) >
                     float(self.config['twitter']['time_window'])):
-                self.time_start = time.time()
+                self.time_start = current_time
                 self.timeline_request_counter = int(self.config['twitter']
                                                     ['user_timeline']['limit_user'])
             if self.timeline_request_counter == 0:
-                self.timeline_request_counter = int(self.config['twitter']
-                                                    ['user_timeline']['limit_user'])
+                logging.info('Have to wait.')
+                #time.sleep(float(self.config['twitter']['time_window']) - (current_time - self.time_start))
             else:
                 self.timeline_request_counter = self.timeline_request_counter - 1
-                if first:
-                    user_timeline = [{'user':{'id':user_id,
+                try:
+                    itr = itr + 1
+                    if first:
+                        user_timeline = [{'user':{'id':user_id,
                                             'name':'test_user',
                                             'screen_name':'test_user',
                                             'profile_image_url':'testurl'},
-                        'id':since_id + 1,'created_at':'Sun Oct 13 15:07:48 +0000 2013',
-                        'text':str(time.time()),
-                        'coordinates':{'coordinates':[1, 1]}},
-                        {'user':{'id':user_id,'name':'test_user',
-                                'screen_name':'test_user',
-                                'profile_image_url':'testurl'},
-                        'id':since_id,'created_at':'Sun Oct 13 15:07:48 +0000 2013',
-                        'text':str(time.time()),
-                        'coordinates':{'coordinates':[1, 1]}}]
-                    first = False
-                else:
-                    user_timeline = [{'user':{'id':user_id,
-                                    'name':'test_user',
-                                    'screen_name':'test_user',
-                                    'profile_image_url':'testurl'},
-                        'id':since_id + 1,'created_at':'Sun Oct 13 15:07:48 +0000 2013',
-                        'text':str(time.time()),
-                        'coordinates':{'coordinates':[1, 1]}},
-                        {'user':{'id':user_id,'name':'test_user',
-                                'screen_name':'test_user',
-                                'profile_image_url':'testurl'},
-                        'id':since_id,'created_at':'Sun Oct 13 15:07:48 +0000 2013',
-                        'text':str(time.time()),
-                        'coordinates':{'coordinates':[1, 1]}}]
+                                            'id':1000*user_id + itr,
+                                            'created_at':'Sun Oct 13 15:07:48 +0000 2013',
+                                            'text':str(time.time()),
+                                            'coordinates':{'coordinates':[1, 1]},
+                                            'place':None}]
+                    else:
+                        user_timeline = [{'user':{'id':user_id,
+                                            'name':'test_user',
+                                            'screen_name':'test_user',
+                                            'profile_image_url':'testurl'},
+                                            'id':1000*user_id + itr,
+                                            'created_at':'Sun Oct 13 15:07:48 +0000 2013',
+                                            'text':str(time.time()),
+                                            'coordinates':{'coordinates':[1, 1]},
+                                            'place':None}]
+                    
+                    if itr == 1001:
+                        user_timeline = None
+                except TwythonError as e:
+                    if e.error_code == 401:
+                        process = False
+                    logging.exception('ParserREST.get_user_timeline: {}'.format(e))
+                    continue
+                except ConnectionError as e:
+                    logging.exception('ParserREST.get_user_timeline: {}'.format(e))
+                    time.sleep(30)
+                    self.twitter = Twython(self.config['twitter']['appkeys']['app_key'],
+                                        self.config['twitter']['appkeys']['app_secret'],
+                                        self.config['twitter']['appkeys']['oauth_token'],
+                                        self.config['twitter']['appkeys']['oauth_token_secret'])
+                    continue
                 if user_timeline:
+                    if first:
+                        last_id = user_timeline[0]['id']
+                        first = False
                     if user_timeline[-1]['id'] == since_id:
                         del(user_timeline[-1])
                         process = False
-                    statuses_count = statuses_count + len(user_timeline)
+                    else:
+                        max_id = user_timeline[-1]['id'] - 1
                     for status in user_timeline:
-                        if not (status['coordinates'] is None and status['place'] is None):
-                            self.db_cursor.add_tweet_data(status)
-                    max_id = user_timeline[-1]['id'] - 1
+                        if (not (status['coordinates'] is None and 
+                                        status['place'] is None)):
+                            if self.db_cursor.add_tweet_data(status):
+                                statuses_count = statuses_count + 1
+                            else:
+                                process = False
                 else:
                     process = False
-        return {'statuses_count':statuses_count,'last_id':since_id}
+        return {'statuses_count':statuses_count,'last_id':last_id}
     
 class ParserStream(TwythonStreamer):
     def __init__ (self, config):
@@ -572,16 +593,16 @@ class ParserStream(TwythonStreamer):
                 else:
                     time.sleep(int(self.config['twitter']['errors']['connection']['timeout']))
 
-    def test_data(self, start_user_id, tweet_id_step):
+    def test_data(self, start_user_id, amount_of_items):
         data = {'user':{'id':start_user_id,
                         'name':'test_user',
                         'screen_name':'test_user',
                         'profile_image_url':'testurl'},
-                'id':start_user_id + tweet_id_step,
+                'id':start_user_id,
                 'created_at':'Sun Oct 13 15:07:48 +0000 2013',
                 'text':'2013-10-29 00:11:07.875088',
                 'coordinates':{'coordinates':[1, 1]}}
-        while True:
+        while data['user']['id'] < start_user_id + amount_of_items:
             data['user']['id'] = data['user']['id'] + 1
             data['id'] = data['id'] + 1
             data['text'] = str(datetime.now())
